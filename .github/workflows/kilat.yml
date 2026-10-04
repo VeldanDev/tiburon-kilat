@@ -1,0 +1,55 @@
+name: Berita Kilat
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kilat
+  cancel-in-progress: false
+
+jobs:
+  kilat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Daftar berita yang sudah diproses dibawa antar-jalan lewat cache.
+      - uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: kilat-${{ github.run_id }}
+          restore-keys: kilat-
+
+      - name: Cek dan kirim berita
+        run: python kilat_ci.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state
+          key: kilat-${{ github.run_id }}
+
+      # GitHub mematikan jadwal di repo yang 60 hari tanpa commit. Commit kosong tiap ~45 hari.
+      - name: Jaga jadwal tetap aktif
+        run: |
+          umur=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          if [ "$umur" -ge 45 ]; then
+            git config user.name "tiburon-kilat"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Jaga jadwal Berita Kilat tetap aktif"
+            git push
+          fi
