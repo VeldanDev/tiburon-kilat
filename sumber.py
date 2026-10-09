@@ -285,7 +285,7 @@ def ambil_resmi(max_umur_jam: int = 6, terlihat: set[str] | None = None) -> list
 
 # Kanal Telegram publik berita tech/AI (Veldan 2026-10-09). Dibaca lewat pratinjau web t.me/s/<kanal>,
 # tanpa login dan tanpa akun bot. Item tetap disaring penting() di kilat, karena volumenya besar.
-KANAL_TELEGRAM = ["perplexity", "aipost"]  # kanal berbahasa Rusia tidak lolos saringan kata kunci Inggris
+KANAL_TELEGRAM = ["perplexity", "aipost", "hitech"]  # kanal berbahasa Rusia tidak lolos saringan kata kunci Inggris
 
 
 def ambil_telegram(max_umur_jam: int = 6) -> list[dict]:
