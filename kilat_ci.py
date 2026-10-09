@@ -26,15 +26,19 @@ JAM_SENYAP = range(0, 6)  # 00:00-05:59 WIB tidak mengirim; tercakup Radar Pagi
 ENTITAS = re.compile(
     r"\b(openai|anthropic|claude|chatgpt|gemini|deepmind|google|alphabet|apple|microsoft|meta|nvidia|tesla"
     r"|spacex|amazon|aws|xai|grok|mistral|deepseek|tiktok|bytedance|samsung|intel|amd|github|linux|android"
-    r"|iphone|windows|youtube|whatsapp|instagram|cursor|hugging ?face|perplexity|tsmc|qualcomm|arm)\b", re.I)
+    r"|iphone|windows|youtube|whatsapp|instagram|cursor|hugging ?face|perplexity|tsmc|qualcomm|arm"
+    r"|playstation|ps5|ps6|xbox|nintendo|switch 2|steam|valve|geforce|rtx|gta|rockstar|epic games|ubisoft"
+    r"|unreal|capcom|sony)\b", re.I)
 PERISTIWA = re.compile(
     r"\b(launch\w*|releas\w*|unveil\w*|announc\w*|introduc\w*|debut\w*|acquir\w*|acquisition|buys?|bought"
     r"|raises?|raised|funding|valuation|ipo|layoffs?|lays off|cuts? \d|breach\w*|hack\w*|leak\w*|outage"
     r"|down for|bans?|banned|lawsuit|sues?|sued|fined?|antitrust|recall\w*|shut\w* down|open[- ]sourc\w*"
-    r"|new model|gpt-?\d|agent|rolls? out)\b", re.I)
+    r"|new model|gpt-?\d|agent|rolls? out|trailer|release date|delay\w*|revealed?)\b", re.I)
 
 
 def penting(i: dict) -> bool:
+    if i.get("resmi"):  # pengumuman langsung dari lab AI selalu dikirim
+        return True
     if i.get("sumber") == "Hacker News":
         return (i.get("skor") or 0) >= SKOR_HN
     j = i.get("judul") or ""
@@ -83,7 +87,7 @@ def kirim(items: list[dict]) -> None:
     judul = terjemah([i["judul"] for i in items])
     baris = ["Berita Kilat Tiburon", ""]
     for i, j in zip(items, judul):
-        label = i["sumber"] + (f", {i['skor']} poin" if i.get("skor") else "")
+        label = ("RESMI " if i.get("resmi") else "") + i["sumber"] + (f", {i['skor']} poin" if i.get("skor") else "")
         baris += [j, f"({label}) {i['url']}", ""]
     r = _post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
               {"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "\n".join(baris).strip(),
@@ -104,10 +108,21 @@ def main() -> None:
     except Exception as e:
         print(f"berita dunia gagal: {e}")
     try:
+        items += sumber.ambil_resmi(SEGAR_JAM, set(sudah))
+    except Exception as e:
+        print(f"kanal resmi gagal: {e}")
+    try:
         items += sumber.ambil_hacker_news(30)
     except Exception as e:
         print(f"hacker news gagal: {e}")
 
+    for nama in {i["sumber"] for i in items if i.get("halaman")}:
+        kunci = f"__halaman__{nama}"
+        if kunci not in sudah:
+            for i in items:
+                if i.get("sumber") == nama:
+                    sudah[i["url"]] = "awal"
+            sudah[kunci] = cap
     calon = []
     for i in items:
         url = i.get("url")
@@ -130,7 +145,8 @@ def main() -> None:
         return
 
     if calon and sekarang.hour not in JAM_SENYAP:
-        calon.sort(key=lambda i: -(i.get("skor") or 0))
+        # Kanal resmi lab AI dulu, baru sisanya menurut skor.
+        calon.sort(key=lambda i: (not i.get("resmi"), -(i.get("skor") or 0)))
         kiriman = calon[:MAKS_KIRIM]
         kirim(kiriman)
         for i in kiriman:

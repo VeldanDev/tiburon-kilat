@@ -139,6 +139,11 @@ FEED_BERITA = {
     "Rest of World": "https://restofworld.org/feed/latest",
     "Sifted": "https://sifted.eu/feed",
     "MIT Technology Review": "https://www.technologyreview.com/feed/",
+    # Game (Veldan 2026-10-09: nyambung dengan NVIDIA/GPU, penonton veldorable suka).
+    "PC Gamer": "https://www.pcgamer.com/rss/",
+    "The Verge Games": "https://www.theverge.com/rss/games/index.xml",
+    "IGN": "https://feeds.ign.com/ign/all",
+    "Eurogamer": "https://www.eurogamer.net/feed",
 }
 
 # Judul RSS sering membawa sisa markup dan entitas HTML (&amp;#8217;).
@@ -214,6 +219,68 @@ def _item_dari_feed(xml_teks: str, nama: str) -> list[dict]:
             )
     return hasil
 
+
+
+# Kanal RESMI lab AI (Veldan 2026-10-09: update AI paling ditunggu, harus tahu dari sumbernya).
+# Anthropic dan xAI tidak punya RSS; halaman berita mereka dibaca dan tiap tautan /news/
+# yang belum pernah terlihat dianggap pengumuman baru (penanda "terlihat" disimpan pemanggil).
+FEED_RESMI = {
+    "OpenAI": "https://openai.com/news/rss.xml",
+    "Google DeepMind": "https://deepmind.google/blog/rss.xml",
+    "Google AI": "https://blog.google/technology/ai/rss/",
+    "NVIDIA": "https://blogs.nvidia.com/feed/",
+}
+HALAMAN_RESMI = {
+    "Anthropic": ("https://www.anthropic.com/news", "https://www.anthropic.com"),
+    "xAI": ("https://x.ai/news", "https://x.ai"),
+}
+
+
+UA_RESMI = "Mozilla/5.0 (compatible; tiburon-radar/0.1)"  # feed DeepMind menolak UA tanpa "Mozilla"
+
+
+def _judul_halaman(url: str) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": UA_RESMI})
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        teks = response.read(200_000).decode("utf-8", errors="replace")
+    m = re.search(r'<meta property="og:title" content="([^"]+)"', teks) or re.search(r"<title>(.*?)</title>", teks, re.S)
+    return _bersih(m.group(1)) if m else url
+
+
+def ambil_resmi(max_umur_jam: int = 6, terlihat: set[str] | None = None) -> list[dict]:
+    """Item dari kanal resmi. Untuk HALAMAN_RESMI, judul hanya diambil untuk tautan yang belum
+    ada di `terlihat` supaya tiap jalan tidak membuka puluhan halaman."""
+    batas = datetime.now(timezone.utc) - timedelta(hours=max_umur_jam)
+    hasil: list[dict] = []
+    for nama, url in FEED_RESMI.items():
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": UA_RESMI})
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                item_feed = _item_dari_feed(response.read().decode("utf-8", errors="replace"), nama)
+        except (urllib.error.URLError, TimeoutError, ET.ParseError, ValueError) as exc:
+            print(f"[peringatan] feed resmi {nama} gagal: {exc}", file=sys.stderr)
+            continue
+        for item in item_feed[:15]:
+            waktu = item.pop("terbit", None)
+            if waktu and waktu.tzinfo and waktu < batas:
+                continue
+            hasil.append({**item, "resmi": True})
+    terlihat = terlihat or set()
+    for nama, (url, dasar) in HALAMAN_RESMI.items():
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": UA_RESMI})
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                teks = response.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError) as exc:
+            print(f"[peringatan] halaman resmi {nama} gagal: {exc}", file=sys.stderr)
+            continue
+        for jalur in dict.fromkeys(re.findall(r'href="(/news/[a-z0-9-]+)"', teks)):
+            tautan = dasar + jalur
+            # Sumber yang baru pertama dibaca hanya ditandai pemanggil; judul tak perlu diambil.
+            baru = f"__halaman__{nama}" in terlihat and tautan not in terlihat
+            judul = _judul_halaman(tautan) if baru else ""
+            hasil.append({"sumber": nama, "judul": judul, "url": tautan, "resmi": True, "halaman": True})
+    return hasil
 
 def ambil_berita_dunia(per_feed: int = 25, max_umur_jam: int = 36) -> list[dict]:
     """Kumpulkan berita teknologi dunia dari semua feed di FEED_BERITA.
