@@ -282,6 +282,36 @@ def ambil_resmi(max_umur_jam: int = 6, terlihat: set[str] | None = None) -> list
             hasil.append({"sumber": nama, "judul": judul, "url": tautan, "resmi": True, "halaman": True})
     return hasil
 
+
+# Kanal Telegram publik berita tech/AI (Veldan 2026-10-09). Dibaca lewat pratinjau web t.me/s/<kanal>,
+# tanpa login dan tanpa akun bot. Item tetap disaring penting() di kilat, karena volumenya besar.
+KANAL_TELEGRAM = ["perplexity", "aipost"]  # kanal berbahasa Rusia tidak lolos saringan kata kunci Inggris
+
+
+def ambil_telegram(max_umur_jam: int = 6) -> list[dict]:
+    batas = datetime.now(timezone.utc) - timedelta(hours=max_umur_jam)
+    hasil: list[dict] = []
+    for kanal in KANAL_TELEGRAM:
+        try:
+            request = urllib.request.Request(f"https://t.me/s/{kanal}", headers={"User-Agent": UA_RESMI})
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                teks = response.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError) as exc:
+            print(f"[peringatan] telegram {kanal} gagal: {exc}", file=sys.stderr)
+            continue
+        for blok in teks.split('class="tgme_widget_message_wrap')[1:]:
+            pos = re.search(r'data-post="([^"]+)"', blok)
+            isi = re.search(r'tgme_widget_message_text[^>]*>(.*?)</div>', blok, re.S)
+            waktu = re.search(r'<time datetime="([^"]+)"', blok)
+            if not (pos and isi):
+                continue
+            terbit = _waktu_terbit(waktu.group(1)) if waktu else None
+            if terbit and terbit.tzinfo and terbit < batas:
+                continue
+            baris = re.sub(r"^\W+", "", _bersih(isi.group(1)))  # buang emoji pembuka
+            hasil.append({"sumber": f"Telegram @{kanal}", "judul": baris[:220], "url": f"https://t.me/{pos.group(1)}"})
+    return hasil
+
 def ambil_berita_dunia(per_feed: int = 25, max_umur_jam: int = 36) -> list[dict]:
     """Kumpulkan berita teknologi dunia dari semua feed di FEED_BERITA.
 
