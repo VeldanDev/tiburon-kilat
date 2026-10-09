@@ -112,6 +112,10 @@ def main() -> None:
     except Exception as e:
         print(f"kanal resmi gagal: {e}")
     try:
+        items += sumber.ambil_telegram(SEGAR_JAM)
+    except Exception as e:
+        print(f"telegram gagal: {e}")
+    try:
         items += sumber.ambil_hacker_news(30)
     except Exception as e:
         print(f"hacker news gagal: {e}")
